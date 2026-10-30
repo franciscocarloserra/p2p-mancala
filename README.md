@@ -4,9 +4,9 @@
 
 ![board](screenshot.png)
 
-Two-player Mancala (Kalah, 6 pits x 4 stones), browser to browser over WebRTC via Trystero/Nostr. No server.
+Mancala (Kalah, 6 pits x 4 stones) for 2 to 6 players, browser to browser over WebRTC via Trystero/Nostr. No server.
 
-Open `index.html` (or the GitHub Pages site): it generates a `#room:password` link; send the whole link to your opponent. A third person with the link can watch. "xl" or Esc toggles a spreadsheet look.
+Open `index.html` (or the GitHub Pages site): it generates a `#room:password` link; send the whole link to your opponent. Everyone who opens the link takes a seat until someone taps start; later arrivals watch. With 3+ players each row is a player and captures take from the player halfway around the table. "xl" or Esc toggles a spreadsheet look.
 
 The game is saved on each device (localStorage) and re-syncs on reconnect. To publish a new version, bump the version in `index.html` (`VERSION` and the `?v=` import) and in `version.txt`.
 
