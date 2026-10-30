@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>mancala</title>
+<link rel="icon" href="data:,">
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  body{margin:0;height:100dvh;display:flex;flex-direction:column;overflow:hidden;color:#eee;user-select:none;
+    font:15px/1.3 system-ui,sans-serif;background:radial-gradient(ellipse at 50% 40%,#3a2a1c 0%,#1c140d 70%,#0d0906 100%)}
+  #bar{display:flex;gap:8px;align-items:center;padding:8px 10px;padding-top:max(8px,env(safe-area-inset-top));background:#0008;font-size:13px}
+  #status{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #dot{width:9px;height:9px;border-radius:50%;background:#c33;flex-shrink:0}#dot.on{background:#3c6}
+  .pill{all:unset;cursor:pointer;padding:4px 9px;border-radius:12px;background:#fff1;font-size:12px}
+  #upd,#again{display:none}#upd{background:#e0a020;color:#000}#again{background:#2e7d55}
+  main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom))}
+  .who{display:flex;justify-content:space-between;font-size:13px;opacity:.75;padding:0 6px}
+  .who.turn{opacity:1;color:#ffd84a}
+  /* landscape: 8 cols x 2 rows; portrait: same cells transposed (vars swap) */
+  #board{display:grid;gap:8px;padding:12px;border-radius:28px;background:linear-gradient(#7a4f2c,#5a3a20);box-shadow:0 8px 30px #000a,inset 0 2px 0 #fff2;
+    grid-template-columns:1.25fr repeat(6,1fr) 1.25fr;grid-template-rows:1fr 1fr;width:min(100%,900px);margin:0 auto}
+  .cell{grid-row:var(--r);grid-column:var(--c);position:relative;border-radius:50%;aspect-ratio:1;background:#3b2414;
+    box-shadow:inset 0 4px 10px #000c;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:2px;padding:14%}
+  .store{aspect-ratio:auto;border-radius:40px}
+  .mine.cell:not(.store){cursor:pointer}
+  .mine.can{outline:2px solid #ffd84a55}.mine.can:hover{outline-color:#ffd84a}
+  .seed{width:22%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 35% 30%,#666,#111 55%,#000);box-shadow:0 1px 2px #000a}
+  .store .seed{width:16%}
+  .n{position:absolute;bottom:-2px;right:6px;font-size:11px;opacity:.6}
+  .store .n{bottom:6px;right:50%;transform:translateX(50%);font-size:16px;opacity:.9}
+  .hit{animation:hit .9s}
+  @keyframes hit{0%{background:#8a6a2a}100%{background:#3b2414}}
+  /* portrait (phones): board fills the height, pits sized by row height so they stay round and thumb-sized */
+  @media (orientation:portrait){
+    main{justify-content:stretch}
+    #board{flex:1;min-height:0;grid-template-columns:1fr 1fr;grid-template-rows:1.25fr repeat(6,1fr) 1.25fr;width:min(100%,380px);padding:10px;gap:6px}
+    .cell{grid-row:var(--c);grid-column:var(--r);height:100%;width:auto;max-width:100%;min-height:0;justify-self:center}
+    .store{width:100%;border-radius:40px}
+  }
+  #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#000c;padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none}
+  #toast.on{opacity:1}
+  #modal{display:none;position:fixed;inset:0;background:#0008;align-items:center;justify-content:center}#modal.on{display:flex}
+  #modal>div{max-width:340px;margin:20px;padding:16px;border-radius:12px;background:#221810;font-size:14px;line-height:1.5}
+  /* Stealth: looks like a spreadsheet. Toggle with the "xl" pill or Esc */
+  #xlhead{display:none}
+  body.xl{color-scheme:light;color:#000;font:13px/1.2 Calibri,Carlito,'Segoe UI',Arial,sans-serif;
+    background:repeating-linear-gradient(90deg,transparent 0 63px,#e1e1e1 63px 64px),repeating-linear-gradient(transparent 0 19px,#e1e1e1 19px 20px) #fff}
+  .xl #xlhead{display:block;background:#217346;color:#fff;font-size:12px}
+  .xl #xlhead div{padding:4px 10px}.xl #xlhead .tabs{display:flex;gap:14px;background:#f3f3f3;color:#333;border-bottom:1px solid #d4d4d4}
+  .xl #xlhead .fx{background:#fff;color:#333;border-bottom:1px solid #d4d4d4;font-family:Consolas,monospace}
+  .xl #xlhead .cols{display:flex;background:#f3f3f3;color:#555;padding:0;border-bottom:1px solid #c8c8c8}.xl #xlhead .cols span{width:64px;text-align:center;border-right:1px solid #d4d4d4}
+  .xl #bar{background:#f3f3f3;color:#333;border-bottom:1px solid #d4d4d4}
+  .xl .pill{background:#fff;border:1px solid #c8c8c8;border-radius:2px}.xl #upd,.xl #again{color:#222}
+  .xl #dot{display:none}
+  .xl main{justify-content:flex-start}.xl #board{flex:none}.xl .who{opacity:1;color:#333}.xl .who.turn{color:#217346;font-weight:600}
+  .xl #board{gap:0;padding:0;border-radius:0;background:#fff;box-shadow:none;border:1px solid #c8c8c8;width:min(100%,520px);margin:0}
+  .xl .cell,.xl .store{aspect-ratio:auto;height:22px;width:auto;max-width:none;justify-self:stretch;border-radius:0;background:#fff;box-shadow:none;border:1px solid #e1e1e1;padding:0;display:flex;align-items:center;justify-content:flex-end}
+  .xl .store{height:auto;background:#f3f3f3;font-weight:600}
+  .xl .seed{display:none}
+  .xl .n,.xl .store .n{position:static;transform:none;opacity:1;font-size:13px;padding-right:4px}
+  .xl .mine.can{outline:0;background:#e2efda}.xl .mine.can:hover{box-shadow:inset 0 0 0 2px #217346}
+  .xl .hit{animation:none;background:#fff2cc}
+  .xl #modal{background:#0003}.xl #modal>div,.xl #toast{background:#fff;color:#222;border:1px solid #adadad;border-radius:0}
+</style></head><body>
+<div id="xlhead"><div>Book1 - Excel</div><div class="tabs"><span>File</span><span>Home</span><span>Insert</span><span>Formulas</span><span>Data</span><span>Review</span></div><div class="fx">fx&nbsp;&nbsp;=SUM(B2:B14)</div><div class="cols"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div></div>
+<div id="bar"><span id="dot"></span><span id="status">connecting...</span><button class="pill" id="again">rematch</button><button class="pill" id="upd">update</button><button class="pill" id="copy">link</button><button class="pill" id="rules" title="rules">?</button><button class="pill" id="xl">xl</button></div>
+<main>
+  <div class="who" id="oppW"><span>opponent</span><span id="oppS"></span></div>
+  <div id="board"></div>
+  <div class="who" id="meW"><span>you</span><span id="meS"></span></div>
+</main>
+<div id="toast"></div>
+<div id="modal"><div>
+  <b>Mancala (Kalah)</b><br>
+  Tap one of your pits: its stones are sown one by one toward your store, skipping the opponent's store.<br>
+  If the last one lands in your store, you play again.<br>
+  If it lands in an empty pit of yours with stones opposite, you capture both.<br>
+  When one side is empty, each player keeps what's left on their side. Biggest store wins.
+</div></div>
+<script type="module">
+window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.1';
+
+const VERSION = '2026-11-01.1';
+
+// Tunable parameters
+const P = {
+  appId: 'mancala-p2p-9c2a71',
+  relayUrls: ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom'],
+  randomBytes: 16,
+  stones: 4,           // per pit at start
+  maxDots: 15,         // stones drawn per pit; the count label shows the rest
+  maxPayloadBytes: 4096,
+  versionPollMs: 60000,
+  toastMs: 2000,
+  blipGain: 0.04,
+};
+const $ = id => document.getElementById(id);
+const rand = () => [...crypto.getRandomValues(new Uint8Array(P.randomBytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+
+// Session: #room:password in the URL hash (password encrypts signaling; WebRTC itself is end-to-end)
+if (!/^#[^:]+:.+/.test(location.hash)) location.hash = rand() + ':' + rand();
+addEventListener('hashchange', () => location.reload());
+const [room, ...pw] = decodeURIComponent(location.hash.slice(1)).split(':');
+const KEY = 'mancala:' + room;
+const me = localStorage.getItem(KEY + ':me') || rand();
+localStorage.setItem(KEY + ':me', me);
+
+// --- rules (Kalah). pits: 0-5 seat 0, 6 its store, 7-12 seat 1, 13 its store
+const store = p => p ? 13 : 6;
+const fresh = (players, turn = 0, v = 0) => ({schema: 1, id: rand(), v, players, turn, phase: players.length === 2 ? 'play' : 'waiting',
+  pits: Array.from({length: 14}, (_, k) => k % 7 === 6 ? 0 : P.stones), last: [], extra: false});
+function sow(s, p, i) {
+  if (s.phase !== 'play') return 'waiting for opponent';
+  if (s.turn !== p) return 'not your turn';
+  let k = p * 7 + i, n = s.pits[k];
+  if (!n) return 'empty pit';
+  s.pits[k] = 0; const hit = [k];
+  while (n) { k = (k + 1) % 14; if (k === store(1 - p)) continue; s.pits[k]++; n--; hit.push(k); }
+  if (k >= p * 7 && k < p * 7 + 6 && s.pits[k] === 1 && s.pits[12 - k]) {
+    s.pits[store(p)] += s.pits[12 - k] + 1; s.pits[k] = s.pits[12 - k] = 0; hit.push(12 - k, store(p));
+  }
+  s.extra = k === store(p);
+  if (!s.extra) s.turn = 1 - p;
+  const empty = q => s.pits.slice(q * 7, q * 7 + 6).every(x => !x);
+  if (empty(0) || empty(1)) {
+    for (const q of [0, 1]) for (let j = 0; j < 6; j++) { s.pits[store(q)] += s.pits[q * 7 + j]; s.pits[q * 7 + j] = 0; }
+    s.phase = 'over';
+  }
+  s.last = hit;
+}
+
+// --- sync: whole state, highest v wins (tie: lowest id), persisted per device
+let s = JSON.parse(localStorage.getItem(KEY + ':state') || 'null') || fresh([me]);
+const cfg = {appId: P.appId, password: pw.join(':')};
+if (P.relayUrls.length) cfg.relayConfig = {urls: P.relayUrls};
+const r = joinRoom(cfg, room);
+const stAct = r.makeAction('st');
+const seat = () => s.players.indexOf(me);
+const newer = (a, b) => a.v > b.v || (a.v === b.v && a.id < b.id);
+function commit() { s.v++; localStorage.setItem(KEY + ':state', JSON.stringify(s)); stAct.send(JSON.stringify(s)); render(); }
+function claim() { if (seat() < 0 && s.players.length < 2) { s.players.push(me); if (s.players.length === 2) s.phase = 'play'; commit(); } }
+
+const valid = o => o && o.schema === 1 && typeof o.id === 'string' && Number.isInteger(o.v)
+  && Array.isArray(o.players) && o.players.length <= 2 && o.players.every(x => typeof x === 'string')
+  && Array.isArray(o.pits) && o.pits.length === 14 && o.pits.every(x => Number.isInteger(x) && x >= 0)
+  && o.pits.reduce((a, b) => a + b, 0) === 12 * P.stones && (o.turn === 0 || o.turn === 1) && ['waiting', 'play', 'over'].includes(o.phase);
+stAct.onMessage = raw => {
+  if (typeof raw !== 'string' || raw.length > P.maxPayloadBytes) return;
+  let o; try { o = JSON.parse(raw); } catch { return; }
+  if (!valid(o) || !newer(o, s)) return;
+  const wasMine = myTurn();
+  s = {...o, last: Array.isArray(o.last) ? o.last.filter(Number.isInteger) : [], extra: o.extra === true};
+  localStorage.setItem(KEY + ':state', JSON.stringify(s));
+  claim(); render(true);
+  if (!wasMine && myTurn()) blip(660);
+};
+r.onPeerJoin = peer => { stAct.send(JSON.stringify(s), {target: peer}); render(); };
+r.onPeerLeave = () => render();
+
+const myTurn = () => s.phase === 'play' && s.turn === seat();
+function play(i) {
+  const err = sow(s, seat(), i);
+  if (err) return toast(err);
+  if (s.extra && s.phase === 'play') toast('play again!');
+  commit(); flash();
+}
+
+// --- render. Spectators see seat 0 at the bottom.
+function cell(k, rr, c, mine) {
+  const d = document.createElement('div'), n = s.pits[k], isStore = k % 7 === 6;
+  d.className = 'cell' + (isStore ? ' store' : '') + (mine ? ' mine' : '') + (mine && !isStore && myTurn() && n ? ' can' : '');
+  d.style.setProperty('--r', rr); d.style.setProperty('--c', c); d.dataset.k = k;
+  for (let j = 0; j < Math.min(n, P.maxDots); j++) {
+    const e = document.createElement('i'); e.className = 'seed'; d.append(e);
+  }
+  d.append(Object.assign(document.createElement('span'), {className: 'n', textContent: n}));
+  if (mine && !isStore) d.onclick = () => play(k % 7);
+  return d;
+}
+function render(anim) {
+  const p = Math.max(0, seat()), o = 1 - p, cells = [];
+  for (let i = 0; i < 6; i++) cells.push(cell(p * 7 + i, 2, 2 + i, seat() >= 0), cell(o * 7 + i, 1, 7 - i, false));
+  cells.push(cell(store(p), '1 / span 2', 8, seat() >= 0), cell(store(o), '1 / span 2', 1, false));
+  $('board').replaceChildren(...cells);
+  if (anim) flash();
+  const a = s.pits[store(p)], b = s.pits[store(o)], peers = Object.keys(r.getPeers()).length;
+  $('meS').textContent = a; $('oppS').textContent = b;
+  $('meW').classList.toggle('turn', s.phase === 'play' && s.turn === p);
+  $('oppW').classList.toggle('turn', s.phase === 'play' && s.turn === o);
+  $('dot').className = peers ? 'on' : '';
+  $('again').style.display = s.phase === 'over' && seat() >= 0 ? 'inline' : 'none';
+  $('status').textContent = s.phase === 'waiting' ? 'waiting: share the link'
+    : s.phase === 'over' ? (seat() < 0 ? `final ${a}–${b}` : a > b ? `you won ${a}–${b}` : a < b ? `you lost ${a}–${b}` : `draw ${a}–${b}`)
+    : seat() < 0 ? 'watching' : myTurn() ? 'your turn' : "opponent's turn" + (peers ? '' : ' (offline)');
+}
+function flash() { for (const k of s.last) $('board').querySelector(`[data-k="${k}"]`)?.classList.add('hit'); }
+
+// --- misc
+let ac, toastT;
+addEventListener('pointerdown', () => { ac ??= new AudioContext(); ac.resume(); });
+function blip(f) {
+  if (!ac || ac.state !== 'running' || document.body.classList.contains('xl')) return;
+  const os = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+  os.frequency.value = f; g.gain.setValueAtTime(P.blipGain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + .12);
+  os.connect(g).connect(ac.destination); os.start(t); os.stop(t + .12);
+}
+function toast(t) { $('toast').textContent = t; $('toast').className = 'on'; clearTimeout(toastT); toastT = setTimeout(() => $('toast').className = '', P.toastMs); }
+$('copy').onclick = async () => { await navigator.clipboard.writeText(location.href); toast('link copied'); };
+$('rules').onclick = () => $('modal').className = 'on';
+$('modal').onclick = () => $('modal').className = '';
+$('again').onclick = () => { const v = s.v; s = fresh(s.players, Math.random() < .5 ? 0 : 1, v); commit(); };
+$('upd').onclick = () => location.reload();
+setInterval(async () => {
+  try { const v = (await (await fetch('version.txt', {cache: 'no-store'})).text()).trim(); if (v && v !== VERSION) $('upd').style.display = 'inline'; } catch {}
+}, P.versionPollMs);
+const stealth = on => {
+  document.body.classList.toggle('xl', on);
+  document.title = on ? 'Book1 - Excel' : 'mancala';
+  localStorage.setItem('mancala:xl', on ? '1' : '');
+};
+stealth(!!localStorage.getItem('mancala:xl'));
+$('xl').onclick = () => stealth(!document.body.classList.contains('xl'));
+addEventListener('keydown', e => { if (e.key === 'Escape') stealth(!document.body.classList.contains('xl')); });
+setInterval(render, 3000);
+claim(); render();
+</script></body></html>
