@@ -12,7 +12,7 @@
   #status{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #dot{width:9px;height:9px;border-radius:50%;background:#c33;flex-shrink:0}#dot.on{background:#3c6}
   .pill{all:unset;cursor:pointer;padding:4px 9px;border-radius:12px;background:#fff1;font-size:12px}
-  #upd,#again,#start{display:none}#upd{background:#e0a020;color:#000}#again,#start{background:#2e7d55}
+  #upd,#again,#want{display:none}#upd{background:#e0a020;color:#000}#again,#want{background:#2e7d55}
   main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:10px;padding-bottom:max(10px,env(safe-area-inset-bottom))}
   .who{display:flex;justify-content:space-between;font-size:13px;opacity:.75;padding:0 6px}
   .who.turn{opacity:1;color:#ffd84a}
@@ -56,7 +56,7 @@
   .xl #xlhead .fx{background:#fff;color:#333;border-bottom:1px solid #d4d4d4;font-family:Consolas,monospace}
   .xl #xlhead .cols{display:flex;background:#f3f3f3;color:#555;padding:0;border-bottom:1px solid #c8c8c8}.xl #xlhead .cols span{width:64px;text-align:center;border-right:1px solid #d4d4d4}
   .xl #bar{background:#f3f3f3;color:#333;border-bottom:1px solid #d4d4d4}
-  .xl .pill{background:#fff;border:1px solid #c8c8c8;border-radius:2px}.xl #upd,.xl #again,.xl #start{color:#222}
+  .xl .pill{background:#fff;border:1px solid #c8c8c8;border-radius:2px}.xl #upd,.xl #again,.xl #want{color:#222}
   .xl #dot{display:none}
   .xl main{justify-content:flex-start}.xl #board{flex:none}.xl .who{opacity:1;color:#333}.xl .who.turn{color:#217346;font-weight:600}
   .xl #board{gap:0;padding:0;border-radius:0;background:#fff;box-shadow:none;border:1px solid #c8c8c8;width:min(100%,520px);margin:0}
@@ -69,7 +69,7 @@
   .xl #modal{background:#0003}.xl #modal>div,.xl #toast{background:#fff;color:#222;border:1px solid #adadad;border-radius:0}
 </style></head><body>
 <div id="xlhead"><div>Book1 - Excel</div><div class="tabs"><span>File</span><span>Home</span><span>Insert</span><span>Formulas</span><span>Data</span><span>Review</span></div><div class="fx">fx&nbsp;&nbsp;=SUM(B2:B14)</div><div class="cols"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div></div>
-<div id="bar"><span id="dot"></span><span id="status">connecting...</span><button class="pill" id="start">start</button><button class="pill" id="again">rematch</button><button class="pill" id="upd">update</button><button class="pill" id="copy">link</button><button class="pill" id="rules" title="rules">?</button><button class="pill" id="xl">xl</button></div>
+<div id="bar"><span id="dot"></span><span id="status">connecting...</span><select class="pill" id="want" title="players"></select><button class="pill" id="again">rematch</button><button class="pill" id="upd">update</button><button class="pill" id="copy">link</button><button class="pill" id="rules" title="rules">?</button><button class="pill" id="xl">xl</button></div>
 <main>
   <div class="who" id="oppW"><span>opponent</span><span id="oppS"></span></div>
   <div id="board"></div>
@@ -82,13 +82,13 @@
   If the last one lands in your store, you play again.<br>
   If it lands in an empty pit of yours with stones opposite, you capture both.<br>
   When one side is empty, each player keeps what's left on their side. Biggest store wins.<br>
-  2 to 6 players: everyone with the link takes a seat until someone taps start; later arrivals watch. With 3+, each row is a player, stones flow row to row, and captures take from the player halfway around the table.
+  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, stones flow row to row, and captures take from the player halfway around the table.
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.2';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.3';
 
-const VERSION = '2026-11-01.2';
+const VERSION = '2026-11-01.3';
 
 // Tunable parameters
 const P = {
@@ -96,7 +96,8 @@ const P = {
   relayUrls: ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom'],
   randomBytes: 16,
   stones: 4,           // per pit at start
-  maxPlayers: 6,
+  maxPlayers: 10,
+  defaultPlayers: 2,   // seats until auto-start; the room creator can change it while waiting
   maxDots: 15,         // stones drawn per pit; the count label shows the rest
   maxPayloadBytes: 4096,
   versionPollMs: 60000,
@@ -117,7 +118,7 @@ localStorage.setItem(KEY + ':me', me);
 // --- rules (Kalah for n players). Seat q owns pits q*7 .. q*7+5 and its store q*7+6; sowing goes around all of them
 const store = q => q * 7 + 6;
 const pitsFor = n => Array.from({length: 7 * n}, (_, k) => k % 7 === 6 ? 0 : P.stones);
-const fresh = (players, phase = 'waiting', turn = 0, v = 0) => ({schema: 1, id: rand(), v, players, turn, phase, pits: pitsFor(players.length), last: [], extra: false});
+const fresh = (players, phase = 'waiting', turn = 0, v = 0) => ({schema: 1, id: rand(), v, players, want: P.defaultPlayers, turn, phase, pits: pitsFor(players.length), last: [], extra: false});
 function sow(s, p, i) {
   if (s.phase !== 'play') return 'not started';
   if (s.turn !== p) return 'not your turn';
@@ -142,6 +143,7 @@ function sow(s, p, i) {
 
 // --- sync: whole state, highest v wins (tie: lowest id), persisted per device
 let s = JSON.parse(localStorage.getItem(KEY + ':state') || 'null') || fresh([me]);
+s.want ??= P.defaultPlayers;
 const cfg = {appId: P.appId, password: pw.join(':')};
 if (P.relayUrls.length) cfg.relayConfig = {urls: P.relayUrls};
 const r = joinRoom(cfg, room);
@@ -150,12 +152,14 @@ const seat = () => s.players.indexOf(me);
 const newer = (a, b) => a.v > b.v || (a.v === b.v && a.id < b.id);
 // fresh id per commit: two peers committing the same v (e.g. two people sitting at once) still converge
 function commit() { s.v++; s.id = rand(); localStorage.setItem(KEY + ':state', JSON.stringify(s)); stAct.send(JSON.stringify(s)); render(); }
-function claim() { if (seat() < 0 && s.phase === 'waiting' && s.players.length < P.maxPlayers) { s.players.push(me); s.pits = pitsFor(s.players.length); commit(); } }
+// the game starts by itself when the seats reach s.want, so nobody can start before everyone is in
+const full = () => { if (s.phase === 'waiting' && s.players.length >= s.want) { s.phase = 'play'; s.turn = 0; s.pits = pitsFor(s.players.length); } };
+function claim() { if (seat() < 0 && s.phase === 'waiting' && s.players.length < s.want) { s.players.push(me); s.pits = pitsFor(s.players.length); full(); commit(); } }
 
 const valid = o => o && o.schema === 1 && typeof o.id === 'string' && Number.isInteger(o.v)
   && Array.isArray(o.players) && o.players.length >= 1 && o.players.length <= P.maxPlayers && o.players.every(x => typeof x === 'string')
   && Array.isArray(o.pits) && o.pits.length === 7 * o.players.length && o.pits.every(x => Number.isInteger(x) && x >= 0)
-  && o.pits.reduce((a, b) => a + b, 0) === 6 * P.stones * o.players.length && Number.isInteger(o.turn) && o.turn >= 0 && o.turn < o.players.length && ['waiting', 'play', 'over'].includes(o.phase);
+  && o.pits.reduce((a, b) => a + b, 0) === 6 * P.stones * o.players.length && Number.isInteger(o.want) && o.want >= 2 && o.want <= P.maxPlayers && Number.isInteger(o.turn) && o.turn >= 0 && o.turn < o.players.length && ['waiting', 'play', 'over'].includes(o.phase);
 stAct.onMessage = raw => {
   if (typeof raw !== 'string' || raw.length > P.maxPayloadBytes) return;
   let o; try { o = JSON.parse(raw); } catch { return; }
@@ -210,8 +214,8 @@ function render(anim) {
   $('oppW').classList.toggle('turn', s.phase === 'play' && s.turn === o);
   $('dot').className = peers ? 'on' : '';
   $('again').style.display = s.phase === 'over' && sat ? 'inline' : 'none';
-  $('start').style.display = s.phase === 'waiting' && sat && n >= 2 ? 'inline' : 'none';
-  $('status').textContent = s.phase === 'waiting' ? (!sat ? 'watching' : n < 2 ? 'waiting: share the link' : `${n} seated: start or wait`)
+  $('want').style.display = s.phase === 'waiting' && seat() === 0 ? 'inline' : 'none'; if (+$('want').value !== s.want) $('want').value = s.want;
+  $('status').textContent = s.phase === 'waiting' ? (!sat ? 'watching' : `${n}/${s.want} seated: share the link`)
     : s.phase === 'over' ? (winners.length > 1 ? `draw ${score}` : winners[0] === seat() ? `you won ${score}` : sat && n === 2 ? `you lost ${score}` : `${name(winners[0])} won ${score}`)
     : !sat ? 'watching' : myTurn() ? 'your turn' : (n === 2 ? "opponent's" : name(s.turn) + "'s") + ' turn' + (peers ? '' : ' (offline)');
 }
@@ -231,7 +235,8 @@ $('copy').onclick = async () => { await navigator.clipboard.writeText(location.h
 $('rules').onclick = () => $('modal').className = 'on';
 $('modal').onclick = () => $('modal').className = '';
 $('again').onclick = () => { s = fresh(s.players, 'play', Math.floor(Math.random() * s.players.length), s.v); commit(); };
-$('start').onclick = () => { s.phase = 'play'; s.turn = 0; s.pits = pitsFor(s.players.length); commit(); };
+for (let k = 2; k <= P.maxPlayers; k++) $('want').add(new Option(k + ' players', k));
+$('want').onchange = e => { s.want = +e.target.value; full(); commit(); };
 $('upd').onclick = () => location.reload();
 setInterval(async () => {
   try { const v = (await (await fetch('version.txt', {cache: 'no-store'})).text()).trim(); if (v && v !== VERSION) $('upd').style.display = 'inline'; } catch {}
