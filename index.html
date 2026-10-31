@@ -44,7 +44,16 @@
   .store.turn{box-shadow:inset 0 4px 10px #000c,0 0 0 2px #ffd84a}
   .multi .tag{display:block}.multi .who{display:none}.multi main{justify-content:center}
   .arrow{display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.5}.arrow.turn{opacity:1;color:#ffd84a}
-  .multi #board{flex:none;grid-template-columns:repeat(6,1fr) 1.25fr 22px;grid-template-rows:none;width:min(100%,640px)}
+  .lab{grid-row:var(--r);grid-column:1;display:flex;flex-direction:column;justify-content:center;font-size:13px;line-height:1.2;opacity:.75}
+  .lab small{color:#ff8a7a;font-size:11px}.lab.turn{opacity:1;color:#ffd84a}
+  .multi .tag{display:none}
+  /* capture map: thin lines from the current player's pits to the pits they'd capture; the prey row is tinted */
+  #board{position:relative}
+  #links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  #links path{fill:none;stroke:#ff5a4a;stroke-width:1.5;stroke-dasharray:4 4;opacity:.55}
+  #links path.hot{stroke-width:4;stroke-dasharray:none;opacity:1}#links path.gain{stroke:#ffd84a;stroke-width:3;stroke-dasharray:6 4;opacity:1}
+  .prey:not(.store){background:#4a1c14}
+  .multi #board{flex:none;grid-template-columns:52px repeat(6,1fr) 1.25fr 22px;grid-template-rows:none;width:min(100%,640px)}
   .multi .cell{grid-row:var(--r);grid-column:var(--c);height:auto;width:100%}
   #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#000c;padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none}
   #toast.on{opacity:1}
@@ -85,13 +94,13 @@
   If the last one lands in your store, you play again.<br>
   If it lands in an empty pit of yours with stones opposite, you capture both.<br>
   When one side is empty, each player keeps what's left on their side. Biggest store wins.<br>
-  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, P1 on top. Stones go left to right, then on to the row below (the last row feeds P1), and turns go top to bottom the same way. Captures take the same column from the player halfway around the table. Hover a pit (on a phone: tap once, tap again to play) to see where it lands (dashed) and what it captures (red).
+  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, P1 on top. Stones go left to right, then on to the row below (the last row feeds P1), and turns go top to bottom the same way. Captures take the same column from the player halfway around the table. Each row says who it eats; the red lines and tinted row show what the player moving now can capture. Hover a pit (on a phone: tap once, tap again to play) to see where it lands (dashed) and what it captures (thick red line, yellow to the store).
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.6';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.7';
 
-const VERSION = '2026-11-01.6';
+const VERSION = '2026-11-01.7';
 
 // Tunable parameters
 const P = {
@@ -120,6 +129,9 @@ localStorage.setItem(KEY + ':me', me);
 
 // --- rules (Kalah for n players). Seat q owns pits q*7 .. q*7+5 and its store q*7+6; sowing goes around all of them
 const store = q => q * 7 + 6;
+// capture victim: the player halfway around. 2 players: the pit in front (mirrored board); 3+: same column, since rows line up
+const prey = (n, q) => (q + (n >> 1)) % n;
+const across = (n, q, i) => prey(n, q) * 7 + (n === 2 ? 5 - i : i);
 const pitsFor = n => Array.from({length: 7 * n}, (_, k) => k % 7 === 6 ? 0 : P.stones);
 const fresh = (players, phase = 'waiting', turn = 0, v = 0) => ({schema: 1, id: rand(), v, players, want: P.defaultPlayers, turn, phase, pits: pitsFor(players.length), last: [], extra: false});
 function sow(s, p, i) {
@@ -130,12 +142,11 @@ function sow(s, p, i) {
   if (!c) return 'empty pit';
   s.pits[k] = 0; const hit = [k];
   while (c) { k = (k + 1) % (7 * n); if (k % 7 === 6 && k !== store(p)) continue; s.pits[k]++; c--; hit.push(k); }
-  // victim: the player halfway around. 2 players: the pit in front (mirrored board); 3+: same column, since rows line up
-  const across = ((p + (n >> 1)) % n) * 7 + (n === 2 ? 5 - k % 7 : k % 7);
+  const tgt = across(n, p, k % 7);
   s.eat = -1;
-  if (Math.floor(k / 7) === p && k % 7 < 6 && s.pits[k] === 1 && s.pits[across]) {
-    s.eat = across; s.ate = s.pits[across];
-    s.pits[store(p)] += s.pits[across] + 1; s.pits[k] = s.pits[across] = 0; hit.push(across, store(p));
+  if (Math.floor(k / 7) === p && k % 7 < 6 && s.pits[k] === 1 && s.pits[tgt]) {
+    s.eat = tgt; s.ate = s.pits[tgt];
+    s.pits[store(p)] += s.pits[tgt] + 1; s.pits[k] = s.pits[tgt] = 0; hit.push(tgt, store(p));
   }
   s.extra = k === store(p);
   if (!s.extra) s.turn = (p + 1) % n;
@@ -212,13 +223,18 @@ function render(anim) {
     cells.push(cell(store(p), '1 / span 2', 8, sat), cell(store(o), '1 / span 2', 1, false));
   } else { // one row per seat in seat order, P1 on top; the arrow after each store shows where stones and the turn go next
     for (let q = 0; q < n; q++) {
-      for (let i = 0; i < 7; i++) cells.push(cell(q * 7 + i, q + 1, i + 1, q === seat()));
+      const lab = document.createElement('div'); lab.className = 'lab' + (s.phase === 'play' && s.turn === q ? ' turn' : '');
+      lab.style.setProperty('--r', q + 1); lab.innerHTML = `<b>${name(q)}</b><small>eats ${name(prey(n, q))}</small>`; cells.push(lab);
+      for (let i = 0; i < 7; i++) cells.push(cell(q * 7 + i, q + 1, i + 2, q === seat()));
       const a = Object.assign(document.createElement('div'), {className: 'arrow' + (s.phase === 'play' && s.turn === q ? ' turn' : ''),
         textContent: q < n - 1 ? '↓' : '↺', title: 'then ' + name((q + 1) % n)});
-      a.style.gridRow = q + 1; a.style.gridColumn = 8; cells.push(a);
+      a.style.gridRow = q + 1; a.style.gridColumn = 9; cells.push(a);
     }
   }
-  $('board').replaceChildren(...cells);
+  $('board').replaceChildren(...cells, links);
+  // capture map for whoever moves now (you while waiting): their row's pits -> what each would capture
+  const who = s.phase === 'play' ? s.turn : p; links.replaceChildren();
+  if (n >= 2) for (let i = 0; i < 6; i++) { link(who * 7 + i, across(n, who, i), ''); $('board').querySelector(`[data-k="${across(n, who, i)}"]`).classList.add('prey'); }
   if (anim) flash();
   if (armed >= 0 && myTurn() && s.pits[seat() * 7 + armed]) preview(armed); else armed = -1;
   const peers = Object.keys(r.getPeers()).length, sc = s.players.map((_, q) => s.pits[store(q)]), best = Math.max(...sc);
@@ -237,11 +253,21 @@ function render(anim) {
 function preview(i) {
   unpreview(); const t = structuredClone(s), b = $('board'); sow(t, seat(), i);
   b.querySelector(`[data-k="${t.last.at(t.eat >= 0 ? -3 : -1)}"]`)?.classList.add('land');
-  if (t.eat >= 0) b.querySelector(`[data-k="${t.eat}"]`)?.classList.add('eat');
+  if (t.eat >= 0) { b.querySelector(`[data-k="${t.eat}"]`)?.classList.add('eat'); link(t.last.at(-3), t.eat, 'hot'); link(t.eat, store(seat()), 'gain'); }
 }
+const links = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); links.id = 'links';
+// curved line between two cells' centers; bows sideways when it would cross another row's pits
+function link(a, b, cls) {
+  const B = $('board').getBoundingClientRect(), box = k => $('board').querySelector(`[data-k="${k}"]`).getBoundingClientRect();
+  const A = box(a), Z = box(b), x1 = A.left - B.left + A.width / 2, y1 = A.top - B.top + A.height / 2, x2 = Z.left - B.left + Z.width / 2, y2 = Z.top - B.top + Z.height / 2;
+  const bow = Math.abs(y2 - y1) > 1.6 * A.height && Math.abs(x2 - x1) < A.width ? A.width * .9 : 0;
+  const e = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  e.setAttribute('d', `M${x1} ${y1}Q${(x1 + x2) / 2 + bow} ${(y1 + y2) / 2} ${x2} ${y2}`); if (cls) e.setAttribute('class', cls); links.append(e);
+}
+addEventListener('resize', () => render());
 let armed = -1, mouse = false; // armed: pit previewed by a tap, waiting for the confirming tap
 addEventListener('pointerdown', e => mouse = e.pointerType === 'mouse', true);
-const unpreview = () => $('board').querySelectorAll('.land,.eat').forEach(e => e.classList.remove('land', 'eat'));
+const unpreview = () => { $('board').querySelectorAll('.land,.eat').forEach(e => e.classList.remove('land', 'eat')); links.querySelectorAll('.hot,.gain').forEach(e => e.remove()); };
 $('board').onpointerleave = e => { if (e.pointerType === 'mouse') unpreview(); };
 $('board').onpointerover = e => { if (e.pointerType === 'mouse' && !e.target.closest('.can')) unpreview(); };
 function flash() { for (const k of s.last) $('board').querySelector(`[data-k="${k}"]`)?.classList.add('hit'); }
