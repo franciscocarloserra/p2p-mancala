@@ -85,13 +85,13 @@
   If the last one lands in your store, you play again.<br>
   If it lands in an empty pit of yours with stones opposite, you capture both.<br>
   When one side is empty, each player keeps what's left on their side. Biggest store wins.<br>
-  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, P1 on top. Stones go left to right, then on to the row below (the last row feeds P1), and turns go top to bottom the same way. Captures take the same column from the player halfway around the table. Hover a pit to see where it lands (dashed) and what it captures (red).
+  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, P1 on top. Stones go left to right, then on to the row below (the last row feeds P1), and turns go top to bottom the same way. Captures take the same column from the player halfway around the table. Hover a pit (on a phone: tap once, tap again to play) to see where it lands (dashed) and what it captures (red).
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.5';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.6';
 
-const VERSION = '2026-11-01.5';
+const VERSION = '2026-11-01.6';
 
 // Tunable parameters
 const P = {
@@ -199,8 +199,9 @@ function cell(k, rr, c, mine) {
   }
   d.append(Object.assign(document.createElement('span'), {className: 'n', textContent: n}));
   if (isStore) d.append(Object.assign(document.createElement('span'), {className: 'tag', textContent: name((k - 6) / 7)}));
-  if (mine && !isStore) d.onclick = () => play(k % 7);
-  if (mine && !isStore && myTurn() && n) d.onpointerenter = () => preview(k % 7);
+  // mouse: hover previews, click plays. Touch: first tap previews, second tap on the same pit plays
+  if (mine && !isStore) d.onclick = () => { if (mouse || armed === k % 7) { armed = -1; play(k % 7); } else if (myTurn() && n) { armed = k % 7; preview(armed); } };
+  if (mine && !isStore && myTurn() && n) d.onpointerenter = e => { if (e.pointerType === 'mouse') preview(k % 7); };
   return d;
 }
 function render(anim) {
@@ -219,6 +220,7 @@ function render(anim) {
   }
   $('board').replaceChildren(...cells);
   if (anim) flash();
+  if (armed >= 0 && myTurn() && s.pits[seat() * 7 + armed]) preview(armed); else armed = -1;
   const peers = Object.keys(r.getPeers()).length, sc = s.players.map((_, q) => s.pits[store(q)]), best = Math.max(...sc);
   const winners = s.players.map((_, q) => q).filter(q => sc[q] === best), score = sc.join('–');
   $('meS').textContent = sc[p]; $('oppS').textContent = sc[o];
@@ -233,12 +235,15 @@ function render(anim) {
 }
 // hover preview: dashed = where the last stone lands, red = what you'd capture
 function preview(i) {
-  $('board').onpointerleave(); const t = structuredClone(s), b = $('board'); sow(t, seat(), i);
+  unpreview(); const t = structuredClone(s), b = $('board'); sow(t, seat(), i);
   b.querySelector(`[data-k="${t.last.at(t.eat >= 0 ? -3 : -1)}"]`)?.classList.add('land');
   if (t.eat >= 0) b.querySelector(`[data-k="${t.eat}"]`)?.classList.add('eat');
 }
-$('board').onpointerleave = () => $('board').querySelectorAll('.land,.eat').forEach(e => e.classList.remove('land', 'eat'));
-$('board').onpointerover = e => { if (!e.target.closest('.can')) $('board').onpointerleave(); };
+let armed = -1, mouse = false; // armed: pit previewed by a tap, waiting for the confirming tap
+addEventListener('pointerdown', e => mouse = e.pointerType === 'mouse', true);
+const unpreview = () => $('board').querySelectorAll('.land,.eat').forEach(e => e.classList.remove('land', 'eat'));
+$('board').onpointerleave = e => { if (e.pointerType === 'mouse') unpreview(); };
+$('board').onpointerover = e => { if (e.pointerType === 'mouse' && !e.target.closest('.can')) unpreview(); };
 function flash() { for (const k of s.last) $('board').querySelector(`[data-k="${k}"]`)?.classList.add('hit'); }
 
 // --- misc
