@@ -37,11 +37,13 @@
     .cell{grid-row:var(--c);grid-column:var(--r);height:100%;width:auto;max-width:100%;min-height:0;justify-self:center}
     .store{width:100%;border-radius:40px}
   }
-  /* 3+ players: one row per player (6 pits then its store), sowing reads like text and wraps to the top */
+  /* 3+ players: one row per seat, P1 on top, same for everyone. Stones read like text (left to right, then the row below,
+     last row back to P1) and turns go top to bottom, so both follow the arrows */
   .tag{display:none;position:absolute;top:6px;left:50%;transform:translateX(-50%);font-size:11px;opacity:.8}
   .store.turn{box-shadow:inset 0 4px 10px #000c,0 0 0 2px #ffd84a}
   .multi .tag{display:block}.multi .who{display:none}.multi main{justify-content:center}
-  .multi #board{flex:none;grid-template-columns:repeat(6,1fr) 1.25fr;grid-template-rows:none;width:min(100%,640px)}
+  .arrow{display:flex;align-items:center;justify-content:center;font-size:20px;opacity:.5}.arrow.turn{opacity:1;color:#ffd84a}
+  .multi #board{flex:none;grid-template-columns:repeat(6,1fr) 1.25fr 22px;grid-template-rows:none;width:min(100%,640px)}
   .multi .cell{grid-row:var(--r);grid-column:var(--c);height:auto;width:100%}
   #toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#000c;padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none}
   #toast.on{opacity:1}
@@ -82,13 +84,13 @@
   If the last one lands in your store, you play again.<br>
   If it lands in an empty pit of yours with stones opposite, you capture both.<br>
   When one side is empty, each player keeps what's left on their side. Biggest store wins.<br>
-  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, stones flow row to row, and captures take from the player halfway around the table.
+  2 to 10 players: whoever opens the room first picks how many; the game starts by itself when that many have the link open. Later arrivals watch. With 3+, each row is a player, P1 on top. Stones go left to right, then on to the row below (the last row feeds P1), and turns go top to bottom the same way. Captures take from the player halfway around the table.
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.3';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-01.4';
 
-const VERSION = '2026-11-01.3';
+const VERSION = '2026-11-01.4';
 
 // Tunable parameters
 const P = {
@@ -202,8 +204,13 @@ function render(anim) {
   if (n === 2) { // classic board: you at the bottom, your store on the right
     for (let i = 0; i < 6; i++) cells.push(cell(p * 7 + i, 2, 2 + i, sat), cell(o * 7 + i, 1, 7 - i, false));
     cells.push(cell(store(p), '1 / span 2', 8, sat), cell(store(o), '1 / span 2', 1, false));
-  } else { // one row per seat, in sowing order, yours last (bottom)
-    for (let j = 1; j <= n; j++) { const q = (p + j) % n; for (let i = 0; i < 7; i++) cells.push(cell(q * 7 + i, j, i + 1, q === seat())); }
+  } else { // one row per seat in seat order, P1 on top; the arrow after each store shows where stones and the turn go next
+    for (let q = 0; q < n; q++) {
+      for (let i = 0; i < 7; i++) cells.push(cell(q * 7 + i, q + 1, i + 1, q === seat()));
+      const a = Object.assign(document.createElement('div'), {className: 'arrow' + (s.phase === 'play' && s.turn === q ? ' turn' : ''),
+        textContent: q < n - 1 ? '↓' : '↺', title: 'then ' + name((q + 1) % n)});
+      a.style.gridRow = q + 1; a.style.gridColumn = 8; cells.push(a);
+    }
   }
   $('board').replaceChildren(...cells);
   if (anim) flash();
