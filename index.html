@@ -98,11 +98,11 @@
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-02.1';
-import {store, prey, across, sow} from './game.js?v=2026-11-02.1';
-import {botMove, LEVELS} from './bot.js?v=2026-11-02.1';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-02.2';
+import {store, prey, across, sow} from './game.js?v=2026-11-02.2';
+import {botMove, LEVELS} from './bot.js?v=2026-11-02.2';
 
-const VERSION = '2026-11-02.1';
+const VERSION = '2026-11-02.2';
 
 // Tunable parameters
 const P = {
@@ -137,7 +137,10 @@ localStorage.setItem(KEY + ':me', me);
 const pitsFor = n => Array.from({length: 7 * n}, (_, k) => k % 7 === 6 ? 0 : P.stones);
 const fresh = (players, phase = 'waiting', turn = 0, v = 0) => ({schema: 1, id: rand(), v, players, want: P.defaultPlayers, turn, phase, pits: pitsFor(players.length), last: [], extra: false});
 // --- sync: whole state, highest v wins (tie: lowest id), persisted per device
-let s = JSON.parse(localStorage.getItem(KEY + ':state') || 'null') || (BOT ? fresh([me, 'bot'], 'play', Math.floor(Math.random() * 2)) : fresh([me]));
+// who starts: uniform over seats from crypto (Math.random is fine too, this just rules it out)
+const coin = n => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+const saved = JSON.parse(localStorage.getItem(KEY + ':state') || 'null');
+let s = saved || (BOT ? fresh([me, 'bot'], 'play', coin(2)) : fresh([me]));
 s.want ??= P.defaultPlayers;
 const cfg = {appId: P.appId, password: pw.join(':')};
 if (P.relayUrls.length) cfg.relayConfig = {urls: P.relayUrls};
@@ -276,7 +279,8 @@ function toast(t) { $('toast').textContent = t; $('toast').className = 'on'; cle
 $('copy').onclick = async () => { await navigator.clipboard.writeText(location.href); toast('link copied'); };
 $('rules').onclick = () => $('modal').className = 'on';
 $('modal').onclick = () => $('modal').className = '';
-$('again').onclick = () => { s = fresh(s.players, 'play', Math.floor(Math.random() * s.players.length), s.v); commit(); };
+const starts = () => toast(s.turn === seat() ? 'you start' : name(s.turn) + ' starts');
+$('again').onclick = () => { s = fresh(s.players, 'play', coin(s.players.length), s.v); commit(); starts(); };
 for (let k = 2; k <= P.maxPlayers; k++) $('want').add(new Option(k + ' players', k));
 for (const k in LEVELS) $('lvl').add(new Option(k, k));
 $('lvl').value = level;
@@ -298,4 +302,5 @@ $('xl').onclick = () => stealth(!document.body.classList.contains('xl'));
 addEventListener('keydown', e => { if (e.key === 'Escape') stealth(!document.body.classList.contains('xl')); });
 setInterval(render, 3000);
 claim(); render();
+if (BOT && !saved) starts();
 </script></body></html>
