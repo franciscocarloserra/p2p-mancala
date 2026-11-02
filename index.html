@@ -30,6 +30,9 @@
   .store .n{bottom:6px;right:50%;transform:translateX(50%);font-size:16px;opacity:.9}
   .hit{animation:hit .9s}
   .land{outline:2px dashed #ffd84a!important}.eat{outline:3px solid #ff5a4a!important}
+  .seed.new{animation:drop .25s ease-out}@keyframes drop{0%{transform:translateY(-80%) scale(1.6);opacity:0}100%{transform:none;opacity:1}}
+  .cur:not(.store),.store.cur{background:#6a4a22}
+  .pill.off{opacity:.45;text-decoration:line-through}
   @keyframes hit{0%{background:#8a6a2a}100%{background:#3b2414}}
   /* portrait (phones): board fills the height, pits sized by row height so they stay round and thumb-sized */
   @media (orientation:portrait){
@@ -81,7 +84,7 @@
   .xl #modal{background:#0003}.xl #modal>div,.xl #toast{background:#fff;color:#222;border:1px solid #adadad;border-radius:0}
 </style></head><body>
 <div id="xlhead"><div>Book1 - Excel</div><div class="tabs"><span>File</span><span>Home</span><span>Insert</span><span>Formulas</span><span>Data</span><span>Review</span></div><div class="fx">fx&nbsp;&nbsp;=SUM(B2:B14)</div><div class="cols"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div></div>
-<div id="bar"><span id="dot"></span><span id="status">connecting...</span><select class="pill" id="want" title="players"></select><select class="pill" id="lvl" title="bot level"></select><button class="pill" id="again">rematch</button><button class="pill" id="upd">update</button><button class="pill" id="copy">link</button><button class="pill" id="mode">vs bot</button><button class="pill" id="rules" title="rules">?</button><button class="pill" id="xl">xl</button></div>
+<div id="bar"><span id="dot"></span><span id="status">connecting...</span><select class="pill" id="want" title="players"></select><select class="pill" id="lvl" title="bot level"></select><button class="pill" id="again">rematch</button><button class="pill" id="upd">update</button><button class="pill" id="copy">link</button><button class="pill" id="mode">vs bot</button><button class="pill" id="anim" title="sow stones one by one">anim</button><button class="pill" id="rules" title="rules">?</button><button class="pill" id="xl">xl</button></div>
 <main>
   <div class="who" id="oppW"><span>opponent</span><span id="oppS"></span></div>
   <div id="board"></div>
@@ -98,11 +101,11 @@
 </div></div>
 <script type="module">
 window.onerror = window.onunhandledrejection = e => toast('error: ' + (e.reason || e.message || e));
-import {joinRoom} from './trystero-nostr.mjs?v=2026-11-02.2';
-import {store, prey, across, sow} from './game.js?v=2026-11-02.2';
-import {botMove, LEVELS} from './bot.js?v=2026-11-02.2';
+import {joinRoom} from './trystero-nostr.mjs?v=2026-11-02.3';
+import {store, prey, across, sow} from './game.js?v=2026-11-02.3';
+import {botMove, LEVELS} from './bot.js?v=2026-11-02.3';
 
-const VERSION = '2026-11-02.2';
+const VERSION = '2026-11-02.3';
 
 // Tunable parameters
 const P = {
@@ -116,6 +119,8 @@ const P = {
   maxPayloadBytes: 4096,
   versionPollMs: 60000,
   toastMs: 2000,
+  sowMs: 140,         // per stone in the sowing animation
+  sowMaxMs: 2000,     // cap for a whole move: long sowings step faster
   blipGain: 0.04,
   botMs: 700,         // pause before each bot move so it can be followed
   botLevel: 'normal', // default difficulty
@@ -162,10 +167,10 @@ stAct.onMessage = raw => {
   if (typeof raw !== 'string' || raw.length > P.maxPayloadBytes) return;
   let o; try { o = JSON.parse(raw); } catch { return; }
   if (!valid(o) || !newer(o, s)) return;
-  const wasMine = myTurn();
+  const wasMine = myTurn(), before = s.pits, next = o.v === s.v + 1;
   s = {...o, last: Array.isArray(o.last) ? o.last.filter(Number.isInteger) : [], extra: o.extra === true};
   localStorage.setItem(KEY + ':state', JSON.stringify(s));
-  claim(); render(true);
+  claim(); if (next && s.last.length) { render(); sowAnim(before); } else render(true);
   if (!wasMine && myTurn()) blip(660);
 };
 r.onPeerJoin = peer => { stAct.send(JSON.stringify(s), {target: peer}); render(); };
@@ -173,17 +178,18 @@ r.onPeerLeave = () => render();
 
 const myTurn = () => s.phase === 'play' && s.turn === seat();
 function play(i) {
-  const err = sow(s, seat(), i);
+  if (view) return;
+  const before = s.pits.slice(), err = sow(s, seat(), i);
   if (err) return toast(err);
   if (s.eat >= 0) toast(`ate ${s.ate + 1}`); else if (s.extra && s.phase === 'play') toast('play again!');
-  commit(); flash();
+  commit(); sowAnim(before);
 }
 
 // --- render. Spectators see seat 0 as theirs.
 const name = q => q === seat() ? 'you' : BOT ? 'bot' : 'P' + (q + 1);
 function cell(k, rr, c, mine) {
-  const d = document.createElement('div'), n = s.pits[k], isStore = k % 7 === 6;
-  d.className = 'cell' + (isStore ? ' store' : '') + (mine ? ' mine' : '') + (mine && !isStore && myTurn() && n ? ' can' : '')
+  const d = document.createElement('div'), n = (view || s.pits)[k], isStore = k % 7 === 6;
+  d.className = 'cell' + (isStore ? ' store' : '') + (mine ? ' mine' : '') + (mine && !isStore && !view && myTurn() && n ? ' can' : '')
     + (isStore && s.phase === 'play' && s.turn === (k - 6) / 7 ? ' turn' : '');
   d.style.setProperty('--r', rr); d.style.setProperty('--c', c); d.dataset.k = k;
   for (let j = 0; j < Math.min(n, P.maxDots); j++) {
@@ -218,7 +224,7 @@ function render(anim) {
   if (n >= 2) for (let i = 0; i < 6; i++) { link(who * 7 + i, across(n, who, i), ''); $('board').querySelector(`[data-k="${across(n, who, i)}"]`).classList.add('prey'); }
   if (anim) flash();
   if (armed >= 0 && myTurn() && s.pits[seat() * 7 + armed]) preview(armed); else armed = -1;
-  const peers = Object.keys(r.getPeers()).length, sc = s.players.map((_, q) => s.pits[store(q)]), best = Math.max(...sc);
+  const peers = Object.keys(r.getPeers()).length, sc = s.players.map((_, q) => (view || s.pits)[store(q)]), best = Math.max(...sc);
   const winners = s.players.map((_, q) => q).filter(q => sc[q] === best), score = sc.join('–');
   $('meS').textContent = sc[p]; $('oppS').textContent = sc[o];
   $('meW').classList.toggle('turn', s.phase === 'play' && s.turn === p);
@@ -237,14 +243,32 @@ let botT = 0;
 function botLoop() {
   if (!BOT || botT || s.phase !== 'play' || s.turn !== 1) return;
   botT = setTimeout(() => {
-    botT = 0; if (!BOT || s.phase !== 'play' || s.turn !== 1) return;
+    botT = 0; if (view || !BOT || s.phase !== 'play' || s.turn !== 1) return; // animation end re-renders and calls back here
+    const before = s.pits.slice();
     sow(s, 1, botMove(s.pits, 1, LEVELS[level]));
     if (s.eat >= 0) toast(`bot ate ${s.ate + 1}`);
-    commit(); flash(); if (myTurn()) blip(660);
+    commit(); sowAnim(before); if (myTurn()) blip(660);
   }, P.botMs);
+}
+// replays the last move stone by stone on a copy of the board before it; the final render shows captures and sweeps
+let view = null, animT = 0, animOn = localStorage.getItem('mancala:anim') ? localStorage.getItem('mancala:anim') === '1' : !matchMedia('(prefers-reduced-motion: reduce)').matches;
+function sowAnim(before) {
+  clearTimeout(animT); view = null;
+  const hit = s.last, sown = hit.slice(1, s.eat >= 0 ? -2 : undefined);
+  if (!animOn || !sown.length) return render(true);
+  view = before.slice(); view[hit[0]] = 0; unpreview(); render();
+  const step = Math.min(P.sowMs, P.sowMaxMs / sown.length); let j = 0;
+  const tick = () => {
+    if (j === sown.length) { view = null; render(); if (s.eat >= 0) for (const k of hit.slice(-2)) $('board').querySelector(`[data-k="${k}"]`)?.classList.add('hit'); return; }
+    const k = sown[j++]; view[k]++; render();
+    const c = $('board').querySelector(`[data-k="${k}"]`); c?.classList.add('cur'); c?.querySelector('.seed:last-of-type')?.classList.add('new');
+    animT = setTimeout(tick, step);
+  };
+  animT = setTimeout(tick, step / 2);
 }
 // hover preview: dashed = where the last stone lands, red = what you'd capture
 function preview(i) {
+  if (view) return;
   unpreview(); const t = structuredClone(s), b = $('board'); sow(t, seat(), i);
   b.querySelector(`[data-k="${t.last.at(t.eat >= 0 ? -3 : -1)}"]`)?.classList.add('land');
   if (t.eat >= 0) { b.querySelector(`[data-k="${t.eat}"]`)?.classList.add('eat'); link(t.last.at(-3), t.eat, 'hot'); link(t.eat, store(seat()), 'gain'); }
@@ -288,6 +312,9 @@ $('lvl').onchange = e => { level = e.target.value; localStorage.setItem('mancala
 $('mode').textContent = BOT ? 'online' : 'vs bot';
 $('mode').onclick = () => location.hash = BOT ? rand() + ':' + rand() : 'bot';
 $('want').onchange = e => { s.want = +e.target.value; full(); commit(); };
+const animPill = () => $('anim').classList.toggle('off', !animOn);
+$('anim').onclick = () => { animOn = !animOn; localStorage.setItem('mancala:anim', animOn ? '1' : '0'); animPill(); toast('animation ' + (animOn ? 'on' : 'off')); };
+animPill();
 $('upd').onclick = () => location.reload();
 setInterval(async () => {
   try { const v = (await (await fetch('version.txt', {cache: 'no-store'})).text()).trim(); if (v && v !== VERSION) $('upd').style.display = 'inline'; } catch {}
